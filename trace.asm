@@ -1,4 +1,3 @@
-;goto -) 
 		model 	tiny
 		locals
 		.code
@@ -9,15 +8,14 @@ prog = psp + 100h
 
 _:		jmp	start
 
-; breakpoint interrupt handler start adress 
-int03h:
-        jmp     int03hf
+; single step interrupt handler start adress 
+int01h:
+        jmp     int01hf
 
-bp_pos      db  0
-saved_byte  db  0
-vector03    dd  0
+vector01    dd  0
 
-bp_msg      db  'Breakpoint reached!',13,10,'$'
+trace_msg      db  'Trace:',13,10,'$'
+press_key_msg  db  'Press any key',13,10,'$'
 exit_msg    db  'Debugging finished!',13,10,'$'
 cs_msg      db  'CS: $'
 ip_msg      db  'IP: $'
@@ -126,8 +124,9 @@ print_regs:
 
         ret
      
-; breakpoint interrupt handler code
-int03hf:
+
+; single step interrupt handler code
+int01hf:
 
         ; save head of stack
         push    bp
@@ -148,19 +147,11 @@ int03hf:
         pop     ds
         pop     es
 
-        ; restore instruction
-        mov     bx, [bp]
-        sub     bx, 1h
-        mov     cl, saved_byte
-        mov     [bx + psp], cl
-        mov     [bp], bx
-
         ; handler code
-        
-        ; print message
 
+        ; print trace message
         mov     ax, 0900h
-        mov     dx, offset bp_msg
+        mov     dx, offset trace_msg
         int     21h
 
         ; print cs, ip
@@ -170,6 +161,14 @@ int03hf:
         mov     bp, sp
         add     bp, 4
         call    print_regs
+
+        ; print "press any key"
+        mov     ax, 0900h
+        mov     dx, offset press_key_msg
+        int     21h
+
+        mov     ax, 0
+        int     16h
 
         ; restore registers
         pop     es
@@ -189,19 +188,28 @@ exit_h:
 
         ; save registers
         push    ax
+        push    bx
         push    dx
+
+        ; reset TF flag
+        pushf
+        pop     bx
+        xor     bx, 0100h
+        push    bx
+        popf
 
         mov     dx, offset exit_msg
         mov     ax, 0900h
         int     21h
 
         ; recover breakpoint interrupt
-        lds     dx, vector03
-        mov     ax, 2503h
+        lds     dx, vector01
+        mov     ax, 2501h
         int     21h
 
         ; restore registers
         pop     dx
+        pop     bx
         pop     ax
 
         ret
@@ -221,7 +229,6 @@ start:
 		pop	    es
 		
         call    load_prog
-        call    set_bp
         call    set_interrupts
 
         ; set retf instruction to start of loaded program
@@ -239,14 +246,22 @@ start:
         pop     bx 
         add     ax, bx
 
-        ; push address of loaded program on stack
+        ; set TF flag
+        pushf
+        pop     bx
+        or      bx, 0100h
+
+        ; push flags and address of loaded program on stack
         push    0h
+        push    bx
         push    ax
         push    100h
         mov     ds, ax
 
-        ; jump to loaded program 
-        retf    
+
+        ; jump to loaded program
+        ; using iret to pop flags from stack 
+        iret
         
         ret
 
@@ -308,16 +323,16 @@ set_interrupts:
         push    dx
         push    es
         
-        ; save old int03 handler        
-        mov     ax, 3503h
+        ; save old int01 handler        
+        mov     ax, 3501h
         int     21h ; pointers on vecotr in bx, es
-        mov     word ptr vector03, bx
-        mov     bx, offset vector03
+        mov     word ptr vector01, bx
+        mov     bx, offset vector01
         add     bx, 02h
         mov     word ptr [bx], es
 
-        mov     ax, 2503h
-        mov     dx, offset int03h
+        mov     ax, 2501h
+        mov     dx, offset int01h
         int     21h
 
         ; restore registers
@@ -325,34 +340,6 @@ set_interrupts:
         pop     dx
         pop     bx
         pop     ax
-
-        ret
-
-set_bp:
-        ; save registers
-        push    ax
-        push    bx
-        push    cx
-        push    dx
-
-        ; calculate position of breakpoint
-        mov     bx, prog
-        mov     cl, bp_pos
-        mov     ch, 0
-        add     bx, cx
-
-        ; save current command
-        mov     al, byte ptr[bx]        
-        mov     saved_byte, al
-
-        ; write breakpoint
-        mov     byte ptr[bx], 0cch ;  INT03 = 0cch
-
-        ; restore registers
-        pop     dx
-        pop     cx
-        pop     bx
-        pop     ax        
 
         ret
 
@@ -428,9 +415,3 @@ exit:
 
 EOF:		
         end	_
-
-:-)
-@echo off
-tasm /m debugger.bat
-tlink /x/t debugger
-del debugger.obj
