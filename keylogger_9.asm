@@ -1,4 +1,3 @@
-;goto -) 
 		model 	tiny
 		.code
 		org 	100h
@@ -29,14 +28,30 @@ int09h:
         in      al, 60h
         
         cmp     al, 1
-        je      escape_exit
+        jne     print_scancode
+
+        ; handle Escape key
+        mov     escape_flg, 1
+
+print_scancode:
+        mov     ah, al
+
+        ; send acknowledgment to keyboard
+        in      al, 61h
+        or      al, 10000000b
+        out     61h, al
+        and     al, 01111111b
+        out     61h, al
 
         ; enable interrupts
-        mov     ah, 20h
-        out     20h, ah
+        mov     al, 20h
+        out     20h, al
+
+        mov     al, ah
 
         call    keylogger
 
+int9h_exit:
         ; restore registers
         pop     es
         pop     ds                      
@@ -45,10 +60,6 @@ int09h:
         pop     bx
         pop     ax
 
-        iret
-
-escape_exit:
-        mov     escape_flg, 1
         iret
 
 start:		
@@ -82,8 +93,10 @@ exit_h:
         cli
         ; restore int9 handler
         mov     bx, 24h ; 24h = 36 = 9 * 4
-        mov     [es:bx], word ptr [vector09]
-        mov     [es:bx + 2], word ptr [vector09 + 2]
+        mov     ax, word ptr [vector09]
+        mov     cx, word ptr [vector09 + 2]
+        mov     [es:bx], ax
+        mov     [es:bx + 2], cx
         sti
 
 exit:
@@ -189,9 +202,3 @@ to_hex_exit:
 
 EOF:
         end _
-
-:-)
-@echo off
-tasm /m keyl16.bat
-tlink /x/t keyl16
-del keyl16.obj
