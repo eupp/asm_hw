@@ -17,19 +17,25 @@ key_loop:
 
         cmp     ah, 1
         je      exit
-        shr     ax, 8
         call    keylogger
         jmp     key_loop
 exit:
 		ret
 
 keylogger:
-        ; ax - scan code to print
+        ; ah - scan code
+        ; al - ascii char
 
         push    bx
         push    cx
         push    dx
+        push    si
         push    bp
+
+        ; save ascii code
+        mov     si, ax
+        ; move bits of scan code
+        shr     ax, 8
 
         ; convert code to ascii num
         mov     bx, offset hex_buf
@@ -61,9 +67,40 @@ keylogger:
         ; get current cursor pos
         mov     ax, 0300h
         int     10h
+
+        ; set cursor position to next column
+        inc     dx
+        mov     ax, 0200h
+        int     10h
+
+        ; write third byte
+        mov     ah, 0Ah
+        mov     al, byte ptr [bp + 2]
+        mov     cx, 1
+        int     10h
+
+        ; get current cursor pos
+        mov     ax, 0300h
+        int     10h
+
+        ; set cursor position to next column
+        inc     dx
+        mov     ax, 0200h
+        int     10h
+
+    
+        ; write ascii code
+        mov     ax, si
+        mov     ah, 0Ah
+        mov     cx, 1
+        int     10h
+
+        ; get current cursor pos
+        mov     ax, 0300h
+        int     10h
         
         ; back to the line start
-        dec     dx
+        sub     dx, 3
         mov     ax, 0200h
         int     10h
 
@@ -77,6 +114,7 @@ keylogger:
         int     10h
 
         pop     bp
+        pop     si
         pop     dx
         pop     cx
         pop     bx
